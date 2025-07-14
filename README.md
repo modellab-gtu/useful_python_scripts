@@ -3,3 +3,5 @@ pymol_COM.sh file writes the center of masses of all docked poses as a cooordina
 rmsd_matrix_align.py allows one to create rmsd matrix of the molecules' 3D coordinate files in a directory and then clusters them hierarcically. Useful for distinguishing local minima structures in a given set of conformations. 
 
 align.py just aligns two molecules using rdkit and reports the best rmsd along with saving the aligned structures.
+
+fixed_extract_crd_v6.py is used to extract scan coordinates from relaxed scan done by G16. And it also prints the energies along the scanned coordinates. if requested it can also plot.
