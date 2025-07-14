@@ -1,4 +1,3 @@
-
 import re
 import argparse
 import matplotlib.pyplot as plt
@@ -29,7 +28,8 @@ def parse_modredundant(log_content):
                     "atoms": atoms,
                     "step": step_size,
                     "value0": None,
-                    "value": None
+                    "value": None,
+                    "value_mod": None
                 }
                 break
             break
@@ -94,7 +94,7 @@ def extract_scan_data(log_content):
             energy = None
             while j > 0:
                 if "SCF Done" in log_content[j]:
-                    match = re.search(r"SCF Done:\s+E\(\w+\)\s+=\s+([-\d\.]+)", log_content[j])
+                    match = re.search(r"SCF Done:\s+E\(\w+\)\s+=\s+([-.\d]+)", log_content[j])
                     if match:
                         energy = float(match.group(1))
                         break
@@ -104,7 +104,17 @@ def extract_scan_data(log_content):
                 scan_info = scan_info_template.copy() if scan_info_template else {}
                 if scan_info and scan_info.get("value0") is not None:
                     delta = (current_point - 1) * scan_info["step"]
-                    scan_info["value"] = scan_info["value0"] + delta
+                    raw_val = scan_info["value0"] + delta
+                    scan_info["value"] = raw_val
+
+                    if scan_info["type"] in ("Angle", "Dihedral"):
+                        mod_val = raw_val % 360
+                        #if scan_info["type"] == "Dihedral" and mod_val > 180:
+                        #    mod_val -= 360
+                        scan_info["value_mod"] = mod_val
+                    else:
+                        scan_info["value_mod"] = raw_val
+
                 geometries.append(current_geom)
                 energies.append(energy)
                 scan_coords.append(scan_info)
@@ -149,6 +159,10 @@ def write_sdf(geometries, energies, scan_coords, output_file):
                 lines.append(">  <ScanValue>")
                 lines.append(f"{scan_info['value']:.4f}")
                 lines.append("")
+            if scan_info.get("value_mod") is not None:
+                lines.append(">  <ScanValueMod360>")
+                lines.append(f"{scan_info['value_mod']:.4f}")
+                lines.append("")
 
         lines.append("$$$$")
         return "\n".join(lines)
@@ -162,23 +176,26 @@ def display_results(energies, scan_coords, plot, csv_file=None):
     if not scan_coords or not energies:
         return
     e0 = energies[0]
-    print(f"{'ScanValue':>12} {'Energy (Ha)':>15} {'Relative (kcal/mol)':>20}")
-    print("-" * 50)
+    print(f"{'ScanValue':>12} {'Mod360':>10} {'Energy (Ha)':>15} {'Relative (kcal/mol)':>20}")
+    print("-" * 65)
     scan_values = []
+    scan_mods = []
     rel_energies = []
     for e, info in zip(energies, scan_coords):
-        scan_val = info.get("value", None)
+        raw = info.get("value", None)
+        mod = info.get("value_mod", None)
         rel = (e - e0) * 627.509 if e0 is not None else None
-        print(f"{scan_val:12.4f} {e:15.8f} {rel:20.4f}")
-        scan_values.append(scan_val)
+        print(f"{raw:12.4f} {mod:10.4f} {e:15.8f} {rel:20.4f}")
+        scan_values.append(raw)
+        scan_mods.append(mod)
         rel_energies.append(rel)
 
     if csv_file:
         with open(csv_file, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["ScanValue", "Energy_Hartree", "RelativeEnergy_kcal/mol"])
-            for val, e, rel in zip(scan_values, energies, rel_energies):
-                writer.writerow([f"{val:.4f}", f"{e:.8f}", f"{rel:.4f}"])
+            writer.writerow(["ScanValue", "Mod360", "Energy_Hartree", "RelativeEnergy_kcal/mol"])
+            for val, mod, e, rel in zip(scan_values, scan_mods, energies, rel_energies):
+                writer.writerow([f"{val:.4f}", f"{mod:.4f}", f"{e:.8f}", f"{rel:.4f}"])
         print(f"[CSV] Exported scan profile to {csv_file}")
 
     if plot:
@@ -187,8 +204,8 @@ def display_results(energies, scan_coords, plot, csv_file=None):
             unit = "Å"
         elif scan_coords[0]["type"] == "Angle":
             unit = "degrees"
-        plt.plot(scan_values, rel_energies, marker='o')
-        plt.xlabel(f"{scan_coords[0]['type']} ({unit})")
+        plt.plot(scan_mods, rel_energies, marker='o')
+        plt.xlabel(f"{scan_coords[0]['type']} (mod 360, {unit})")
         plt.ylabel("Relative Energy (kcal/mol)")
         atoms = " ".join(scan_coords[0]["atoms"])
         plt.title(f"{scan_coords[0]['type']} Scan for Atoms: {atoms}")
@@ -217,4 +234,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
