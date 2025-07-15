@@ -52,7 +52,7 @@ def parse_modredundant(log_content):
 
     return scan_info
 
-def extract_scan_data(log_content):
+def extract_scan_data(log_content, modon=False):
     geometries = []
     energies = []
     scan_coords = []
@@ -107,10 +107,10 @@ def extract_scan_data(log_content):
                     raw_val = scan_info["value0"] + delta
                     scan_info["value"] = raw_val
 
-                    if scan_info["type"] in ("Angle", "Dihedral"):
+                    if modon and scan_info["type"] in ("Angle", "Dihedral"):
                         mod_val = raw_val % 360
-                        #if scan_info["type"] == "Dihedral" and mod_val > 180:
-                        #    mod_val -= 360
+                        if scan_info["type"] == "Dihedral" and mod_val > 180:
+                            mod_val -= 360
                         scan_info["value_mod"] = mod_val
                     else:
                         scan_info["value_mod"] = raw_val
@@ -172,11 +172,11 @@ def write_sdf(geometries, energies, scan_coords, output_file):
             sdf.write(sdf_block(geom, energy, scan))
             sdf.write("\n")
 
-def display_results(energies, scan_coords, plot, csv_file=None):
+def display_results(energies, scan_coords, plot, csv_file=None, modon=False):
     if not scan_coords or not energies:
         return
     e0 = energies[0]
-    print(f"{'ScanValue':>12} {'Mod360':>10} {'Energy (Ha)':>15} {'Relative (kcal/mol)':>20}")
+    print(f"{'ScanValue':>12} {'Mod360' if modon else '':>10} {'Energy (Ha)':>15} {'Relative (kcal/mol)':>20}")
     print("-" * 65)
     scan_values = []
     scan_mods = []
@@ -185,8 +185,12 @@ def display_results(energies, scan_coords, plot, csv_file=None):
         raw = info.get("value", None)
         mod = info.get("value_mod", None)
         rel = (e - e0) * 627.509 if e0 is not None else None
-        print(f"{raw:12.4f} {mod:10.4f} {e:15.8f} {rel:20.4f}")
-        scan_values.append(raw)
+        if modon:
+            print(f"{raw:12.4f} {mod:10.4f} {e:15.8f} {rel:20.4f}")
+            scan_values.append(mod)
+        else:
+            print(f"{raw:12.4f} {'':>10} {e:15.8f} {rel:20.4f}")
+            scan_values.append(raw)
         scan_mods.append(mod)
         rel_energies.append(rel)
 
@@ -204,8 +208,9 @@ def display_results(energies, scan_coords, plot, csv_file=None):
             unit = "Å"
         elif scan_coords[0]["type"] == "Angle":
             unit = "degrees"
-        plt.plot(scan_mods, rel_energies, marker='o')
-        plt.xlabel(f"{scan_coords[0]['type']} (mod 360, {unit})")
+        plt.plot(scan_values, rel_energies, marker='o')
+        label_x = f"{scan_coords[0]['type']} ({'mod 360, ' if modon else ''}{unit})"
+        plt.xlabel(label_x)
         plt.ylabel("Relative Energy (kcal/mol)")
         atoms = " ".join(scan_coords[0]["atoms"])
         plt.title(f"{scan_coords[0]['type']} Scan for Atoms: {atoms}")
@@ -219,21 +224,20 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output SDF file")
     parser.add_argument("--plot", action="store_true", help="Plot relative energy profile")
     parser.add_argument("--csv", action="store_true", help="Also save CSV with energies")
+    parser.add_argument("--modon", action="store_true", help="Use mod 360 for angles/dihedrals")
     args = parser.parse_args()
 
     with open(args.input, "r") as f:
         log_content = f.readlines()
 
-    geometries, energies, scan_coords = extract_scan_data(log_content)
+    geometries, energies, scan_coords = extract_scan_data(log_content, modon=args.modon)
 
     print(f"[INFO] Extracted {len(geometries)} scan points.")
     write_sdf(geometries, energies, scan_coords, args.output)
 
     csv_file = args.output.rsplit(".", 1)[0] + "_scan.csv" if args.csv else None
-    display_results(energies, scan_coords, plot=args.plot, csv_file=csv_file)
+    display_results(energies, scan_coords, plot=args.plot, csv_file=csv_file, modon=args.modon)
 
 if __name__ == "__main__":
     main()
-
-
 
